@@ -3,10 +3,6 @@ const {
     GatewayIntentBits, 
     Routes, 
     PermissionFlagsBits, 
-    ModalBuilder, 
-    TextInputBuilder, 
-    TextInputStyle, 
-    ActionRowBuilder,
     ChannelType,
     ActivityType
 } = require('discord.js');
@@ -17,7 +13,7 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const OWNER_ID = process.env.DISCORD_OWNER_ID;
 
 if (!TOKEN || !CLIENT_ID || !OWNER_ID) {
-    console.error("❌ Missing environment variables!");
+    console.error("❌ Missing environment variables! Check Railway dashboard config.");
     process.exit(1);
 }
 
@@ -25,19 +21,25 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// Define application commands
+// Define application commands with Attachment options
 const commands = [
     {
         name: 'send',
-        description: 'Send a JSON-formatted message to a specific channel',
+        description: 'Send a JSON/TXT file payload as a formatted message',
         default_member_permissions: PermissionFlagsBits.Administrator.toString(),
         options: [
             {
-                type: 7, 
+                type: 7, // Channel Type
                 name: 'channel',
                 description: 'The channel to send the message to',
                 required: true,
                 channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement]
+            },
+            {
+                type: 11, // ATTACHMENT Type
+                name: 'file',
+                description: 'Upload the .txt or .json file containing your payload',
+                required: true
             }
         ]
     },
@@ -48,11 +50,11 @@ const commands = [
     },
     {
         name: 'status',
-        description: '👁️ [Owner Only] Update the bot\'s custom status and visibility presence',
+        description: '👁️ [Owner Only] Update the bot\'s custom status text and visibility',
         default_member_permissions: '0',
         options: [
             {
-                type: 3, // String type
+                type: 3, // String
                 name: 'visibility',
                 description: 'Select bot visibility state',
                 required: true,
@@ -62,6 +64,12 @@ const commands = [
                     { name: '🔴 Do Not Disturb', value: 'dnd' },
                     { name: '⚪ Invisible', value: 'invisible' }
                 ]
+            },
+            {
+                type: 3, // String
+                name: 'text',
+                description: 'Type the custom activity text status',
+                required: true
             }
         ]
     },
@@ -72,8 +80,16 @@ const commands = [
     },
     {
         name: 'broadcast',
-        description: '📢 [Owner Only] Broadcast a JSON message globally (creates #js-broadcast if missing)',
-        default_member_permissions: '0'
+        description: '📢 [Owner Only] Broadcast a JSON/TXT file payload globally',
+        default_member_permissions: '0',
+        options: [
+            {
+                type: 11, // ATTACHMENT Type
+                name: 'file',
+                description: 'Upload the .txt or .json file containing the broadcast payload',
+                required: true
+            }
+        ]
     }
 ];
 
@@ -115,183 +131,134 @@ async function getOrCreateBroadcastChannel(guild) {
     return targetChannel;
 }
 
+// Helper to download file content from Discord CDN url
+async function downloadFileContent(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to download file from Discord.');
+    return await response.text();
+}
+
 client.on('interactionCreate', async (interaction) => {
-    if (interaction.isChatInputCommand()) {
-        const { commandName } = interaction;
+    if (!interaction.isChatInputCommand()) return;
 
-        // --- OWNER ONLY COMMANDS GUARD ---
-        if (['status', 'guilds', 'broadcast'].includes(commandName)) {
-            if (interaction.user.id !== OWNER_ID) {
-                return interaction.reply({ 
-                    content: '❌ This command is strictly locked to the bot owner.', 
-                    ephemeral: true 
-                });
-            }
-        }
+    const { commandName } = interaction;
 
-        // EXECUTE: /send
-        if (commandName === 'send') {
-            const targetChannel = interaction.options.getChannel('channel');
-
-            const modal = new ModalBuilder()
-                .setCustomId(`send_modal_${targetChannel.id}`)
-                .setTitle('Paste Message JSON');
-
-            const jsonInput = new TextInputBuilder()
-                .setCustomId('json_payload')
-                .setLabel('JSON Payload (Content, Embeds, Components)')
-                .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder('{\n  "content": "Hello World!"\n}')
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(jsonInput));
-            await interaction.showModal(modal);
-        }
-
-        // EXECUTE: /setup-broadcast
-        if (commandName === 'setup-broadcast') {
-            await interaction.deferReply({ ephemeral: true });
-
-            const existingChannel = interaction.guild.channels.cache.find(
-                ch => ch.name === 'js-broadcast' && ch.type === ChannelType.GuildText
-            );
-
-            if (existingChannel) {
-                return interaction.editReply({ content: `⚠️ A channel named ${existingChannel} already exists!` });
-            }
-
-            try {
-                const newChannel = await getOrCreateBroadcastChannel(interaction.guild);
-                await interaction.editReply({ content: `✅ Successfully created private channel: ${newChannel}.` });
-            } catch (error) {
-                console.error(error);
-                await interaction.editReply({ content: `❌ Failed to create channel. Verify bot has **Manage Channels** permission.` });
-            }
-        }
-
-        // EXECUTE: /status (Owner Only - Setup custom status modal)
-        if (commandName === 'status') {
-            const selectedVisibility = interaction.options.getString('visibility');
-
-            const modal = new ModalBuilder()
-                .setCustomId(`status_modal_${selectedVisibility}`)
-                .setTitle('Set Custom Presence');
-
-            const textInput = new TextInputBuilder()
-                .setCustomId('status_text')
-                .setLabel('Custom Activity Status Text')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('e.g., Processing payloads... / Watching you')
-                .setMaxLength(120)
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(textInput));
-            await interaction.showModal(modal);
-        }
-
-        // EXECUTE: /broadcast
-        if (commandName === 'broadcast') {
-            const modal = new ModalBuilder()
-                .setCustomId('broadcast_modal')
-                .setTitle('Global Broadcast JSON');
-
-            const jsonInput = new TextInputBuilder()
-                .setCustomId('json_payload')
-                .setLabel('Broadcast JSON Payload')
-                .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder('{\n  "embeds": [{\n    "title": "Global Update!"\n  }]\n}')
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(jsonInput));
-            await interaction.showModal(modal);
-        }
-
-        // EXECUTE: /guilds
-        if (commandName === 'guilds') {
-            const guildList = client.guilds.cache.map(g => `• **${g.name}** (ID: ${g.id})`).join('\n');
-            await interaction.reply({
-                content: `🌐 **Connected Guilds (${client.guilds.cache.size}):**\n${guildList || 'None'}`,
-                ephemeral: true
+    // --- OWNER ONLY COMMANDS GUARD ---
+    if (['status', 'guilds', 'broadcast'].includes(commandName)) {
+        if (interaction.user.id !== OWNER_ID) {
+            return interaction.reply({ 
+                content: '❌ This command is strictly locked to the bot owner.', 
+                ephemeral: true 
             });
         }
     }
 
-    // Handle Modal Submissions
-    if (interaction.isModalSubmit()) {
-        // Handle /send Modal
-        if (interaction.customId.startsWith('send_modal_')) {
-            const targetChannelId = interaction.customId.replace('send_modal_', '');
-            try {
-                const targetChannel = await client.channels.fetch(targetChannelId);
-                const messagePayload = JSON.parse(interaction.fields.getTextInputValue('json_payload'));
-                
-                await targetChannel.send(messagePayload);
-                await interaction.reply({ content: `✅ Dispatched to ${targetChannel}!`, ephemeral: true });
-            } catch (error) {
-                await interaction.reply({ content: `❌ **Error:** \`${error.message}\``, ephemeral: true });
-            }
-        }
+    // EXECUTE: /send
+    if (commandName === 'send') {
+        await interaction.deferReply({ ephemeral: true });
+        const targetChannel = interaction.options.getChannel('channel');
+        const fileAttachment = interaction.options.getAttachment('file');
 
-        // Handle /status Modal
-        if (interaction.customId.startsWith('status_modal_')) {
-            const targetVisibility = interaction.customId.replace('status_modal_', '');
-            const customStatusText = interaction.fields.getTextInputValue('status_text');
-
-            try {
-                client.user.setPresence({
-                    status: targetVisibility,
-                    activities: [{
-                        name: customStatusText,
-                        type: ActivityType.Custom // Sets up a regular modern Discord custom text status
-                    }]
-                });
-
-                await interaction.reply({ 
-                    content: `⚙️ **Bot Presence Updated!**\n• **Visibility:** \`${targetVisibility}\`\n• **Status Text:** "${customStatusText}"`, 
-                    ephemeral: true 
-                });
-            } catch (error) {
-                await interaction.reply({ content: `❌ **Failed to update presence:** \`${error.message}\``, ephemeral: true });
-            }
-        }
-
-        // Handle /broadcast Modal
-        if (interaction.customId === 'broadcast_modal') {
-            await interaction.deferReply({ ephemeral: true });
+        try {
+            const rawText = await downloadFileContent(fileAttachment.url);
+            const messagePayload = JSON.parse(rawText);
             
-            let rawJson = interaction.fields.getTextInputValue('json_payload');
-            let messagePayload;
+            await targetChannel.send(messagePayload);
+            await interaction.editReply({ content: `✅ Payload successfully dispatched to ${targetChannel}!` });
+        } catch (error) {
+            await interaction.editReply({ content: `❌ **Failed to send:** \`${error.message}\`. Ensure your uploaded file is perfectly formatted JSON.` });
+        }
+    }
 
+    // EXECUTE: /setup-broadcast
+    if (commandName === 'setup-broadcast') {
+        await interaction.deferReply({ ephemeral: true });
+
+        const existingChannel = interaction.guild.channels.cache.find(
+            ch => ch.name === 'js-broadcast' && ch.type === ChannelType.GuildText
+        );
+
+        if (existingChannel) {
+            return interaction.editReply({ content: `⚠️ A channel named ${existingChannel} already exists!` });
+        }
+
+        try {
+            const newChannel = await getOrCreateBroadcastChannel(interaction.guild);
+            await interaction.editReply({ content: `✅ Successfully created private channel: ${newChannel}.` });
+        } catch (error) {
+            console.error(error);
+            await interaction.editReply({ content: `❌ Failed to create channel. Verify bot has **Manage Channels** permission.` });
+        }
+    }
+
+    // EXECUTE: /status
+    if (commandName === 'status') {
+        const visibility = interaction.options.getString('visibility');
+        const text = interaction.options.getString('text');
+
+        try {
+            client.user.setPresence({
+                status: visibility,
+                activities: [{
+                    name: text,
+                    type: ActivityType.Custom
+                }]
+            });
+
+            await interaction.reply({ 
+                content: `⚙️ **Bot Presence Updated!**\n• **Visibility:** \`${visibility}\`\n• **Status Text:** "${text}"`, 
+                ephemeral: true 
+            });
+        } catch (error) {
+            await interaction.reply({ content: `❌ **Failed to update presence:** \`${error.message}\``, ephemeral: true });
+        }
+    }
+
+    // EXECUTE: /broadcast
+    if (commandName === 'broadcast') {
+        await interaction.deferReply({ ephemeral: true });
+        const fileAttachment = interaction.options.getAttachment('file');
+        
+        let messagePayload;
+        try {
+            const rawText = await downloadFileContent(fileAttachment.url);
+            messagePayload = JSON.parse(rawText);
+        } catch (error) {
+            return interaction.editReply({ content: `❌ **Invalid File/JSON Format:** \`${error.message}\`` });
+        }
+
+        const guilds = client.guilds.cache.values();
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const guild of guilds) {
             try {
-                messagePayload = JSON.parse(rawJson);
-            } catch (error) {
-                return interaction.editReply({ content: `❌ **Invalid JSON Format:** \`${error.message}\`` });
-            }
+                const targetChannel = await getOrCreateBroadcastChannel(guild);
 
-            const guilds = client.guilds.cache.values();
-            let successCount = 0;
-            let failCount = 0;
-
-            for (const guild of guilds) {
-                try {
-                    const targetChannel = await getOrCreateBroadcastChannel(guild);
-
-                    if (targetChannel.permissionsFor(guild.members.me).has(PermissionFlagsBits.SendMessages)) {
-                        await targetChannel.send(messagePayload);
-                        successCount++;
-                    } else {
-                        failCount++;
-                    }
-                } catch (err) {
-                    console.error(`Failed auto-creation or transmission logic on guild: ${guild.name}.`, err.message);
+                if (targetChannel.permissionsFor(guild.members.me).has(PermissionFlagsBits.SendMessages)) {
+                    await targetChannel.send(messagePayload);
+                    successCount++;
+                } else {
                     failCount++;
                 }
+            } catch (err) {
+                console.error(`Failed auto-creation or transmission logic on guild: ${guild.name}.`, err.message);
+                failCount++;
             }
-
-            await interaction.editReply({
-                content: `📢 **Broadcast complete!**\n• **Sent successfully:** ${successCount} servers.\n• **Failed/Skipped (Missing Bot Permissions):** ${failCount} servers.`
-            });
         }
+
+        await interaction.editReply({
+            content: `📢 **Broadcast complete!**\n• **Sent successfully:** ${successCount} servers.\n• **Failed/Skipped:** ${failCount} servers.`
+        });
+    }
+
+    // EXECUTE: /guilds
+    if (commandName === 'guilds') {
+        const guildList = client.guilds.cache.map(g => `• **${g.name}** (ID: ${g.id})`).join('\n');
+        await interaction.reply({
+            content: `🌐 **Connected Guilds (${client.guilds.cache.size}):**\n${guildList || 'None'}`,
+            ephemeral: true
+        });
     }
 });
 
