@@ -7,7 +7,8 @@ const {
     TextInputBuilder, 
     TextInputStyle, 
     ActionRowBuilder,
-    ChannelType
+    ChannelType,
+    ActivityType
 } = require('discord.js');
 require('dotenv').config();
 
@@ -16,7 +17,7 @@ const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const OWNER_ID = process.env.DISCORD_OWNER_ID;
 
 if (!TOKEN || !CLIENT_ID || !OWNER_ID) {
-    console.error("❌ Missing environment variables! Ensure DISCORD_TOKEN, DISCORD_CLIENT_ID, and DISCORD_OWNER_ID are configured.");
+    console.error("❌ Missing environment variables!");
     process.exit(1);
 }
 
@@ -47,8 +48,22 @@ const commands = [
     },
     {
         name: 'status',
-        description: '👁️ [Owner Only] View bot diagnostic and system status',
-        default_member_permissions: '0' 
+        description: '👁️ [Owner Only] Update the bot\'s custom status and visibility presence',
+        default_member_permissions: '0',
+        options: [
+            {
+                type: 3, // String type
+                name: 'visibility',
+                description: 'Select bot visibility state',
+                required: true,
+                choices: [
+                    { name: '🟢 Online', value: 'online' },
+                    { name: '🌙 Idle', value: 'idle' },
+                    { name: '🔴 Do Not Disturb', value: 'dnd' },
+                    { name: '⚪ Invisible', value: 'invisible' }
+                ]
+            }
+        ]
     },
     {
         name: 'guilds',
@@ -154,6 +169,26 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
+        // EXECUTE: /status (Owner Only - Setup custom status modal)
+        if (commandName === 'status') {
+            const selectedVisibility = interaction.options.getString('visibility');
+
+            const modal = new ModalBuilder()
+                .setCustomId(`status_modal_${selectedVisibility}`)
+                .setTitle('Set Custom Presence');
+
+            const textInput = new TextInputBuilder()
+                .setCustomId('status_text')
+                .setLabel('Custom Activity Status Text')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g., Processing payloads... / Watching you')
+                .setMaxLength(120)
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(textInput));
+            await interaction.showModal(modal);
+        }
+
         // EXECUTE: /broadcast
         if (commandName === 'broadcast') {
             const modal = new ModalBuilder()
@@ -169,15 +204,6 @@ client.on('interactionCreate', async (interaction) => {
 
             modal.addComponents(new ActionRowBuilder().addComponents(jsonInput));
             await interaction.showModal(modal);
-        }
-
-        // EXECUTE: /status
-        if (commandName === 'status') {
-            const uptime = Math.floor(process.uptime());
-            await interaction.reply({
-                content: `📊 **Bot Status:**\n• **Uptime:** ${uptime}s\n• **Ping:** ${client.ws.ping}ms`,
-                ephemeral: true
-            });
         }
 
         // EXECUTE: /guilds
@@ -203,6 +229,29 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({ content: `✅ Dispatched to ${targetChannel}!`, ephemeral: true });
             } catch (error) {
                 await interaction.reply({ content: `❌ **Error:** \`${error.message}\``, ephemeral: true });
+            }
+        }
+
+        // Handle /status Modal
+        if (interaction.customId.startsWith('status_modal_')) {
+            const targetVisibility = interaction.customId.replace('status_modal_', '');
+            const customStatusText = interaction.fields.getTextInputValue('status_text');
+
+            try {
+                client.user.setPresence({
+                    status: targetVisibility,
+                    activities: [{
+                        name: customStatusText,
+                        type: ActivityType.Custom // Sets up a regular modern Discord custom text status
+                    }]
+                });
+
+                await interaction.reply({ 
+                    content: `⚙️ **Bot Presence Updated!**\n• **Visibility:** \`${targetVisibility}\`\n• **Status Text:** "${customStatusText}"`, 
+                    ephemeral: true 
+                });
+            } catch (error) {
+                await interaction.reply({ content: `❌ **Failed to update presence:** \`${error.message}\``, ephemeral: true });
             }
         }
 
