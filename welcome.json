@@ -1,0 +1,39 @@
+{
+  "flags": 32768,
+  "components": [
+    {
+      "type": 17,
+      "accent_color": 5793266,
+      "components": [
+        {
+          "type": 10,
+          "content": "# 🎉 Welcome {user}!"
+        },
+        {
+          "type": 14,
+          "divider": true,
+          "spacing": 1
+        },
+        {
+          "type": 14,
+          "divider": false,
+          "spacing": 1
+        },
+        {
+          "type": 10,
+          "content": "We're super excited to have you here! You're now part of our amazing community.\n\n**Make yourself at home:**\n- Be kind and respectful to everyone\n- Have fun and join conversations\n- Ask staff if you need anything\n\nWelcome aboard! 💙"
+        },
+        {
+          "type": 12,
+          "items": [
+            {
+              "media": {
+                "url": "https://img.magnific.com/free-vector/stylish-welcome-lettering-banner-join-with-joy-happiness_1017-57675.jpg?semt=ais_hybrid&w=740&q=80"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
