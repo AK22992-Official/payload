@@ -1,7 +1,6 @@
 {
-  "name": "json-dispatcher-bot",
+  "name": "private-utility-bot",
   "version": "1.0.0",
-  "description": "A Discord bot to send JSON-based messages, embeds, and components.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
